@@ -350,21 +350,8 @@
       scriptUrl = 'https://www.hlx.live/tools/sidekick/module.js',
     } = config;
     const innerPrefix = owner && repo ? `${ref}--${repo}--${owner}` : null;
+    const innerHost = innerPrefix ? `${innerPrefix}.hlx.page` : null;
     const publicHost = host && host.startsWith('http') ? new URL(host).host : host;
-    let innerHost = 'hlx.page';
-    if (!innerHost && scriptUrl) {
-      // get hlx domain from script src (used for branch deployment testing)
-      const scriptHost = new URL(scriptUrl).host;
-      if (scriptHost && scriptHost !== 'www.hlx.live' && !scriptHost.startsWith(DEV_URL.host)) {
-        // keep only 1st and 2nd level domain
-        innerHost = scriptHost.split('.')
-          .reverse()
-          .splice(0, 2)
-          .reverse()
-          .join('.');
-      }
-    }
-    innerHost = innerPrefix ? `${innerPrefix}.${innerHost}` : null;
     let liveHost = outerHost;
     if (!liveHost && owner && repo) {
       // use default hlx3 outer CDN including the ref
@@ -3503,16 +3490,18 @@
             ...getAdminFetchOptions(this.config),
           },
         );
-        // bust client cache for live and production
-        if (config.outerHost) {
-          // reuse purgeURL to ensure page relative paths (e.g. when publishing dependencies)
-          purgeURL.hostname = config.outerHost;
-          await fetch(purgeURL.href, { cache: 'reload', mode: 'no-cors' });
-        }
-        if (config.host) {
-          // reuse purgeURL to ensure page relative paths (e.g. when publishing dependencies)
-          purgeURL.hostname = config.host;
-          await fetch(purgeURL.href, { cache: 'reload', mode: 'no-cors' });
+        if (!date) {
+          // bust client cache for live and production
+          if (config.outerHost) {
+            // reuse purgeURL to ensure page relative paths (e.g. when publishing dependencies)
+            purgeURL.hostname = config.outerHost;
+            await fetch(purgeURL.href, { cache: 'reload', mode: 'no-cors' });
+          }
+          if (config.host) {
+            // reuse purgeURL to ensure page relative paths (e.g. when publishing dependencies)
+            purgeURL.hostname = config.host;
+            await fetch(purgeURL.href, { cache: 'reload', mode: 'no-cors' });
+          }
         }
         fireEvent(this, 'published', path);
       } catch (e) {
