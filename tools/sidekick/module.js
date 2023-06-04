@@ -2657,6 +2657,9 @@
      * @returns {Sidekick} The sidekick
      */
     async fetchStatus(refreshLocation) {
+      if (refreshLocation) {
+        this.location = getLocation();
+      }
       const { owner, repo, ref } = this.config;
       if (!owner || !repo || !ref) {
         return this;
@@ -2710,11 +2713,17 @@
         })
         .then((json) => {
           this.status = json;
+          if (window.hlx.sidekick) {
+            window.hlx.sidekick.setAttribute('status', JSON.stringify(json));
+          }
           return json;
         })
         .then((json) => fireEvent(this, 'statusfetched', json))
         .catch(({ message }) => {
           this.status.error = message;
+          if (window.hlx.sidekick) {
+            window.hlx.sidekick.setAttribute('status', JSON.stringify(this.status));
+          }
           const modal = {
             message: message.startsWith('error_') ? i18n(this, message) : message,
             sticky: true,
@@ -3512,13 +3521,11 @@
         // bust client cache for live and production
         if (config.outerHost) {
           // reuse purgeURL to ensure page relative paths (e.g. when publishing dependencies)
-          purgeURL.hostname = config.outerHost;
-          await fetch(purgeURL.href, { cache: 'reload', mode: 'no-cors' });
+          await fetch(`https://${config.outerHost}${purgeURL.pathname}`, { cache: 'reload', mode: 'no-cors' });
         }
         if (config.host) {
           // reuse purgeURL to ensure page relative paths (e.g. when publishing dependencies)
-          purgeURL.hostname = config.host;
-          await fetch(purgeURL.href, { cache: 'reload', mode: 'no-cors' });
+          await fetch(`https://${config.host}${purgeURL.pathname}`, { cache: 'reload', mode: 'no-cors' });
         }
         fireEvent(this, 'published', path);
       } catch (e) {
