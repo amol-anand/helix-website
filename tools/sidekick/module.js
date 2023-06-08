@@ -495,14 +495,8 @@
     } = config;
     const publicHost = host && host.startsWith('http') ? new URL(host).host : host;
     const hostPrefix = owner && repo ? `${ref}--${repo}--${owner}` : null;
-    let innerHost = previewHost;
-    if (!innerHost) {
-      innerHost = hostPrefix ? `${hostPrefix}.hlx.page` : null;
-    }
-    let outerHost = liveHost || legacyLiveHost;
-    if (!outerHost) {
-      outerHost = hostPrefix ? `${hostPrefix}.hlx.live` : null;
-    }
+    const stdInnerHost = hostPrefix ? `${hostPrefix}.hlx.page` : null;
+    const stdOuterHost = hostPrefix ? `${hostPrefix}.hlx.live` : null;
     const devUrl = new URL(devOrigin);
     // define elements to push down
     const pushDownElements = [];
@@ -531,8 +525,10 @@
     return {
       ...config,
       ref,
-      innerHost,
-      outerHost,
+      innerHost: previewHost || stdInnerHost,
+      outerHost: liveHost || legacyLiveHost || stdOuterHost,
+      stdInnerHost,
+      stdOuterHost,
       scriptRoot,
       host: publicHost,
       project: project || '',
@@ -1408,6 +1404,14 @@
       }
     };
 
+    const isChangedUrl = () => {
+      const $test = document.getElementById('sidekick_test_location');
+      if ($test) {
+        return $test.value !== sk.location.href;
+      }
+      return window.location.href !== sk.location.href;
+    };
+
     const updateBulkInfo = () => {
       if (!sk.isAdmin()) {
         return;
@@ -1425,7 +1429,7 @@
       }
       // show/hide bulk buttons
       const filesSelected = sel.length > 0;
-      if (window.location.href !== sk.location.href) {
+      if (isChangedUrl()) {
         // refresh location
         sk.location = getLocation();
       }
@@ -1456,14 +1460,6 @@
       return i18n(sk, i18nKey)
         .replace('$1', num)
         .replace('$2', total);
-    };
-
-    const isChangedUrl = () => {
-      const $test = document.getElementById('sidekick_test_location');
-      if ($test) {
-        return $test.value !== sk.location.href;
-      }
-      return window.location.href !== sk.location.href;
     };
 
     const doBulkOperation = async (operation, method, concurrency, host) => {
@@ -1567,15 +1563,10 @@
             sk.showModal(confirmText);
           } else if (window.confirm(confirmText)) {
             sk.showWait();
-            if (isChangedUrl()) {
-              // url changed, refetch status
-              sk.addEventListener('statusfetched', () => {
-                doBulkOperation('preview', 'update', 2, sk.config.innerHost);
-              }, { once: true });
-              sk.fetchStatus(true);
-            } else {
+            sk.addEventListener('statusfetched', () => {
               doBulkOperation('preview', 'update', 2, sk.config.innerHost);
-            }
+            }, { once: true });
+            sk.fetchStatus(true);
           }
         },
         isEnabled: (s) => s.isAuthorized('preview', 'write') && s.status.webPath,
@@ -1594,15 +1585,10 @@
             sk.showModal(confirmText);
           } else if (window.confirm(confirmText)) {
             sk.showWait();
-            if (isChangedUrl()) {
-              // url changed, refetch status
-              sk.addEventListener('statusfetched', () => {
-                doBulkOperation('publish', 'publish', 40, sk.config.host || sk.config.outerHost);
-              }, { once: true });
-              sk.fetchStatus(true);
-            } else {
+            sk.addEventListener('statusfetched', () => {
               doBulkOperation('publish', 'publish', 40, sk.config.host || sk.config.outerHost);
-            }
+            }, { once: true });
+            sk.fetchStatus(true);
           }
         },
         isEnabled: (s) => s.isAuthorized('live', 'write') && s.status.webPath,
@@ -1649,15 +1635,10 @@
               sk.showModal(emptyText);
             } else {
               sk.showWait();
-              if (isChangedUrl()) {
-                // url changed, refetch status
-                sk.addEventListener('statusfetched', () => {
-                  doBulkCopyUrls(hostProperty);
-                }, { once: true });
-                sk.fetchStatus(true);
-              } else {
+              sk.addEventListener('statusfetched', () => {
                 doBulkCopyUrls(hostProperty);
-              }
+              }, { once: true });
+              sk.fetchStatus(true);
             }
           },
         },
@@ -3000,7 +2981,8 @@
      */
     isInner() {
       const { config, location } = this;
-      return matchProjectHost(config.innerHost, location.host);
+      return matchProjectHost(config.innerHost, location.host)
+       || matchProjectHost(config.stdInnerHost, location.host);
     }
 
     /**
@@ -3009,7 +2991,8 @@
      */
     isOuter() {
       const { config, location } = this;
-      return matchProjectHost(config.outerHost, location.host);
+      return matchProjectHost(config.outerHost, location.host)
+        || matchProjectHost(config.stdOuterHost, location.host);
     }
 
     /**
@@ -3507,7 +3490,9 @@
         return null;
       }
 
-      const purgeURL = new URL(path, this.isEditor() ? `https://${config.innerHost}/` : location.href);
+      const purgeURL = new URL(path, this.isEditor()
+        ? `https://${config.innerHost}/`
+        : location.href);
       console.log(`publishing ${purgeURL.pathname}`);
       let resp = {};
       try {
@@ -3521,13 +3506,11 @@
         // bust client cache for live and production
         if (config.outerHost) {
           // reuse purgeURL to ensure page relative paths (e.g. when publishing dependencies)
-          purgeURL.hostname = config.outerHost;
-          await fetch(purgeURL.href, { cache: 'reload', mode: 'no-cors' });
+          await fetch(`https://${config.outerHost}${purgeURL.pathname}`, { cache: 'reload', mode: 'no-cors' });
         }
         if (config.host) {
           // reuse purgeURL to ensure page relative paths (e.g. when publishing dependencies)
-          purgeURL.hostname = config.host;
-          await fetch(purgeURL.href, { cache: 'reload', mode: 'no-cors' });
+          await fetch(`https://${config.host}${purgeURL.pathname}`, { cache: 'reload', mode: 'no-cors' });
         }
         fireEvent(this, 'published', path);
       } catch (e) {
